@@ -1,8 +1,8 @@
 package main
 
 import (
+	"context"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"time"
@@ -12,7 +12,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	cloudflare "github.com/cloudflare/cloudflare-go"
+	"github.com/cloudflare/cloudflare-go"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -30,19 +30,15 @@ import (
 // 	cfgMetricsDenylist = ""
 // )
 
+var (
+	cloudflareAPI *cloudflare.API
+)
+
 func getTargetZones() []string {
 	var zoneIDs []string
 
 	if len(viper.GetString("cf_zones")) > 0 {
 		zoneIDs = strings.Split(viper.GetString("cf_zones"), ",")
-	} else {
-		// deprecated
-		for _, e := range os.Environ() {
-			if strings.HasPrefix(e, "ZONE_") {
-				split := strings.SplitN(e, "=", 2)
-				zoneIDs = append(zoneIDs, split[1])
-			}
-		}
 	}
 	return zoneIDs
 }
@@ -111,6 +107,7 @@ func fetchMetrics() {
 	for _, a := range accounts {
 		go fetchWorkerAnalytics(a, &wg)
 		go fetchLogpushAnalyticsForAccount(a, &wg)
+		go fetchR2StorageForAccount(a, &wg)
 	}
 
 	// Make requests in groups of cfgBatchSize to avoid rate limit
@@ -133,16 +130,7 @@ func fetchMetrics() {
 	wg.Wait()
 }
 
-func runExpoter() {
-	// fmt.Println(" :", viper.GetString("cf_api_email"))
-	// fmt.Println(" :", viper.GetString("cf_api_key"))
-
-	// fmt.Println(" :", viper.GetString("metrics_path"))
-
-	// fmt.Println(":ASD :", viper.GetString("listen"))
-
-	// fmt.Println(" :", cfgListen)
-
+func runExporter() {
 	cfgMetricsPath := viper.GetString("metrics_path")
 
 	if !(len(viper.GetString("cf_api_token")) > 0 || (len(viper.GetString("cf_api_email")) > 0 && len(viper.GetString("cf_api_key")) > 0)) {
@@ -155,16 +143,40 @@ func runExpoter() {
 	customFormatter.TimestampFormat = "2006-01-02 15:04:05"
 	log.SetFormatter(customFormatter)
 	customFormatter.FullTimestamp = true
+	logLevel, err := log.ParseLevel(viper.GetString("log_level"))
+	if err != nil {
+		log.Fatalf("Invalid log level: %s", viper.GetString("log_level"))
+	}
+	log.SetLevel(logLevel)
 
-	metricsDenylist := []string{}
+	if len(viper.GetString("cf_api_token")) > 0 {
+		cloudflareAPI, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
+
+	} else {
+		cloudflareAPI, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
+	}
+	if err != nil {
+		log.Fatalf("Error creating Cloudflare API client: %s", err)
+	}
+
+	if len(viper.GetString("cf_api_token")) > 0 {
+		status, err := cloudflareAPI.VerifyAPIToken(context.Background())
+		if err != nil {
+			log.Fatalf("Error creating Cloudflare API client: %s", err)
+		}
+		log.Debugf("API Token status: %s", status.Status)
+	}
+
+	var metricsDenylist []string
 	if len(viper.GetString("metrics_denylist")) > 0 {
 		metricsDenylist = strings.Split(viper.GetString("metrics_denylist"), ",")
 	}
-	deniedMetricsSet, err := buildDeniedMetricsSet(metricsDenylist)
+	metricsSet, err := buildFilteredMetricsSet(metricsDenylist)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatalf("Error building metrics set: %s", err)
 	}
-	mustRegisterMetrics(deniedMetricsSet)
+	log.Debugf("Metrics set: %v", metricsSet)
+	mustRegisterMetrics(metricsSet)
 
 	go func() {
 		for ; true; <-time.NewTicker(60 * time.Second).C {
@@ -194,30 +206,29 @@ func runExpoter() {
 
 func main() {
 	var cmd = &cobra.Command{
-		Use:   "viper-test",
-		Short: "testing viper",
+		Use:   "cloudflare_exporter",
+		Short: "Export Cloudflare metrics to Prometheus",
 		Run: func(_ *cobra.Command, _ []string) {
-			runExpoter()
+			runExporter()
 		},
 	}
 
-	//vip := viper.New()
 	viper.AutomaticEnv()
 
 	flags := cmd.Flags()
 
-	flags.String("listen", ":8080", "listen on addr:port ( default :8080), omit addr to listen on all interfaces")
+	flags.String("listen", ":8080", "listen on addr:port, omit addr to listen on all interfaces")
 	viper.BindEnv("listen")
 	viper.SetDefault("listen", ":8080")
 
-	flags.String("metrics_path", "/metrics", "path for metrics, default /metrics")
+	flags.String("metrics_path", "/metrics", "path for metrics")
 	viper.BindEnv("metrics_path")
 	viper.SetDefault("metrics_path", "/metrics")
 
-	flags.String("cf_api_key", "", "cloudflare api key, works with api_email flag")
+	flags.String("cf_api_key", "", "cloudflare api key, required with api_email flag")
 	viper.BindEnv("cf_api_key")
 
-	flags.String("cf_api_email", "", "cloudflare api email, works with api_key flag")
+	flags.String("cf_api_email", "", "cloudflare api email, required with api_key flag")
 	viper.BindEnv("cf_api_email")
 
 	flags.String("cf_api_token", "", "cloudflare api token (preferred)")
@@ -231,11 +242,11 @@ func main() {
 	viper.BindEnv("cf_exclude_zones")
 	viper.SetDefault("cf_exclude_zones", "")
 
-	flags.Int("scrape_delay", 300, "scrape delay in seconds, defaults to 300")
+	flags.Int("scrape_delay", 300, "scrape delay in seconds0")
 	viper.BindEnv("scrape_delay")
 	viper.SetDefault("scrape_delay", 300)
 
-	flags.Int("cf_batch_size", 10, "cloudflare zones batch size (1-10), defaults to 10")
+	flags.Int("cf_batch_size", 10, "cloudflare zones batch size (1-10)")
 	viper.BindEnv("cf_batch_size")
 	viper.SetDefault("cf_batch_size", 10)
 
@@ -246,6 +257,10 @@ func main() {
 	flags.String("metrics_denylist", "", "metrics to not expose, comma delimited list")
 	viper.BindEnv("metrics_denylist")
 	viper.SetDefault("metrics_denylist", "")
+
+	flags.String("log_level", "info", "log level")
+	viper.BindEnv("log_level")
+	viper.SetDefault("log_level", "info")
 
 	viper.BindPFlags(flags)
 	cmd.Execute()

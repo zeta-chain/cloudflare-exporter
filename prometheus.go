@@ -51,6 +51,9 @@ const (
 	poolRequestsTotalMetricName                  MetricName = "cloudflare_zone_pool_requests_total"
 	logpushFailedJobsAccountMetricName           MetricName = "cloudflare_logpush_failed_jobs_account_count"
 	logpushFailedJobsZoneMetricName              MetricName = "cloudflare_logpush_failed_jobs_zone_count"
+	r2StorageTotalMetricName                     MetricName = "cloudflare_r2_storage_total_bytes"
+	r2StorageMetricName                          MetricName = "cloudflare_r2_storage_bytes"
+	r2OperationMetricName                        MetricName = "cloudflare_r2_operation_count"
 )
 
 type MetricsSet map[MetricName]struct{}
@@ -262,6 +265,21 @@ var (
 	},
 		[]string{"destination", "job_id", "final"},
 	)
+
+	r2StorageTotal = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2StorageTotalMetricName.String(),
+		Help: "Total storage used by R2",
+	}, []string{"account"})
+
+	r2Storage = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2StorageMetricName.String(),
+		Help: "Storage used by R2",
+	}, []string{"account", "bucket"})
+
+	r2Operation = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2OperationMetricName.String(),
+		Help: "Number of operations performed by R2",
+	}, []string{"account", "bucket", "operation"})
 )
 
 func buildAllMetricsSet() MetricsSet {
@@ -298,12 +316,15 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(poolRequestsTotalMetricName)
 	allMetricsSet.Add(logpushFailedJobsAccountMetricName)
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
+	allMetricsSet.Add(r2StorageTotalMetricName)
+	allMetricsSet.Add(r2OperationMetricName)
 	return allMetricsSet
 }
 
-func buildDeniedMetricsSet(metricsDenylist []string) (MetricsSet, error) {
+func buildFilteredMetricsSet(metricsDenylist []string) (MetricsSet, error) {
 	deniedMetricsSet := MetricsSet{}
 	allMetricsSet := buildAllMetricsSet()
+
 	for _, metric := range metricsDenylist {
 		if !allMetricsSet.Has(MetricName(metric)) {
 			return nil, fmt.Errorf("metric %s doesn't exists", metric)
@@ -410,6 +431,16 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(logpushFailedJobsZoneMetricName) {
 		prometheus.MustRegister(logpushFailedJobsZone)
 	}
+	if !deniedMetrics.Has(r2StorageTotalMetricName) {
+		prometheus.MustRegister(r2StorageTotal)
+	}
+	if !deniedMetrics.Has(r2StorageMetricName) {
+		prometheus.MustRegister(r2Storage)
+	}
+	if !deniedMetrics.Has(r2OperationMetricName) {
+		prometheus.MustRegister(r2Operation)
+	}
+
 }
 
 func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
@@ -461,6 +492,28 @@ func fetchLogpushAnalyticsForAccount(account cloudflare.Account, wg *sync.WaitGr
 				"job_id":      strconv.Itoa(LogpushHealthAdaptiveGroup.Dimensions.JobID),
 				"final":       strconv.Itoa(LogpushHealthAdaptiveGroup.Dimensions.Final)}).Add(float64(LogpushHealthAdaptiveGroup.Count))
 		}
+	}
+}
+
+func fetchR2StorageForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
+	wg.Add(1)
+	defer wg.Done()
+
+	r, err := fetchR2Account(account.ID)
+
+	if err != nil {
+		return
+	}
+	for _, acc := range r.Viewer.Accounts {
+		var totalStorage uint64
+		for _, bucket := range acc.R2StorageGroups {
+			totalStorage += bucket.Max.PayloadSize
+			r2Storage.With(prometheus.Labels{"account": account.Name, "bucket": bucket.Dimensions.BucketName}).Set(float64(bucket.Max.PayloadSize))
+		}
+		for _, operation := range acc.R2StorageOperations {
+			r2Operation.With(prometheus.Labels{"account": account.Name, "bucket": operation.Dimensions.BucketName, "operation": operation.Dimensions.Action}).Set(float64(operation.Sum.Requests))
+		}
+		r2StorageTotal.With(prometheus.Labels{"account": account.Name}).Set(float64(totalStorage))
 	}
 }
 
