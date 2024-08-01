@@ -758,7 +758,6 @@ func fetchR2Account(accountID string) (*cloudflareResponseR2Account, error) {
 	now := time.Now().Add(-time.Duration(viper.GetInt("scrape_delay")) * time.Second).UTC()
 	s := 60 * time.Second
 	now = now.Truncate(s)
-	now1mAgo := now.Add(-60 * time.Second)
 
 	request := graphql.NewRequest(`query($accountID: String!, $limit: Int!, $date: String!) {
 		viewer {
