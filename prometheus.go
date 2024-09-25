@@ -54,6 +54,7 @@ const (
 	r2StorageTotalMetricName                     MetricName = "cloudflare_r2_storage_total_bytes"
 	r2StorageMetricName                          MetricName = "cloudflare_r2_storage_bytes"
 	r2OperationMetricName                        MetricName = "cloudflare_r2_operation_count"
+	r2ObjectCountMetricName                      MetricName = "cloudflare_r2_object_count"
 )
 
 type MetricsSet map[MetricName]struct{}
@@ -280,6 +281,10 @@ var (
 		Name: r2OperationMetricName.String(),
 		Help: "Number of operations performed by R2",
 	}, []string{"account", "bucket", "operation"})
+	r2ObjectCount = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: r2ObjectCountMetricName.String(),
+		Help: "Number of objects in bucket",
+	}, []string{"account", "bucket"})
 )
 
 func buildAllMetricsSet() MetricsSet {
@@ -318,6 +323,7 @@ func buildAllMetricsSet() MetricsSet {
 	allMetricsSet.Add(logpushFailedJobsZoneMetricName)
 	allMetricsSet.Add(r2StorageTotalMetricName)
 	allMetricsSet.Add(r2OperationMetricName)
+	allMetricsSet.Add(r2ObjectCountMetricName)
 	return allMetricsSet
 }
 
@@ -440,6 +446,9 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(r2OperationMetricName) {
 		prometheus.MustRegister(r2Operation)
 	}
+	if !deniedMetrics.Has(r2ObjectCountMetricName) {
+		prometheus.MustRegister(r2ObjectCount)
+	}
 
 }
 
@@ -509,6 +518,7 @@ func fetchR2StorageForAccount(account cloudflare.Account, wg *sync.WaitGroup) {
 		for _, bucket := range acc.R2StorageGroups {
 			totalStorage += bucket.Max.PayloadSize
 			r2Storage.With(prometheus.Labels{"account": account.Name, "bucket": bucket.Dimensions.BucketName}).Set(float64(bucket.Max.PayloadSize))
+			r2ObjectCount.With(prometheus.Labels{"account": account.Name, "bucket": bucket.Dimensions.BucketName}).Set(float64(bucket.Max.ObjectCount))
 		}
 		for _, operation := range acc.R2StorageOperations {
 			r2Operation.With(prometheus.Labels{"account": account.Name, "bucket": operation.Dimensions.BucketName, "operation": operation.Dimensions.Action}).Set(float64(operation.Sum.Requests))
