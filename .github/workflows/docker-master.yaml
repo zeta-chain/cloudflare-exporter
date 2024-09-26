@@ -3,6 +3,7 @@ name: Build and Publish Docker Images after push to master branch
 on:
   push:
     branches: [master]
+  workflow_dispatch:
 
 jobs:
   build-and-push-docker-image:
@@ -24,17 +25,10 @@ jobs:
         uses: docker/metadata-action@v3
         with:
           images: |
-            lablabs/cloudflare_exporter
-            ghcr.io/lablabs/cloudflare_exporter
+            ghcr.io/${{ github.repository_owner }}/cloudflare_exporter
           # generate Docker tags based on the following events/attributes
           tags: type=raw,value=latest
-
-      - name: Login to DockerHub
-        uses: docker/login-action@v3
-        with:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_TOKEN }}
-
+          
       - name: Login to Github Packages
         uses: docker/login-action@v3
         with:
