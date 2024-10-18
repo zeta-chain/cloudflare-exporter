@@ -608,7 +608,7 @@ func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		z := z
 
 		addHTTPGroups(&z, name, account)
-		addFirewallGroups(&z, name, account)
+		//addFirewallGroups(&z, name, account)
 		addHealthCheckGroups(&z, name, account)
 		addHTTPAdaptiveGroups(&z, name, account)
 	}
