@@ -449,7 +449,6 @@ func mustRegisterMetrics(deniedMetrics MetricsSet) {
 	if !deniedMetrics.Has(r2ObjectCountMetricName) {
 		prometheus.MustRegister(r2ObjectCount)
 	}
-
 }
 
 func fetchWorkerAnalytics(account cloudflare.Account, wg *sync.WaitGroup) {
@@ -608,7 +607,7 @@ func fetchZoneAnalytics(zones []cloudflare.Zone, wg *sync.WaitGroup) {
 		z := z
 
 		addHTTPGroups(&z, name, account)
-		addFirewallGroups(&z, name, account)
+		//addFirewallGroups(&z, name, account)
 		addHealthCheckGroups(&z, name, account)
 		addHTTPAdaptiveGroups(&z, name, account)
 	}
@@ -664,34 +663,34 @@ func addHTTPGroups(z *zoneResp, name string, account string) {
 	zoneUniquesTotal.With(prometheus.Labels{"zone": name, "account": account}).Add(float64(zt.Unique.Uniques))
 }
 
-func addFirewallGroups(z *zoneResp, name string, account string) {
-	// Nothing to do.
-	if len(z.FirewallEventsAdaptiveGroups) == 0 {
-		return
-	}
-	rulesMap := fetchFirewallRules(z.ZoneTag)
-	for _, g := range z.FirewallEventsAdaptiveGroups {
-		zoneFirewallEventsCount.With(
-			prometheus.Labels{
-				"zone":    name,
-				"account": account,
-				"action":  g.Dimensions.Action,
-				"source":  g.Dimensions.Source,
-				"rule":    normalizeRuleName(rulesMap[g.Dimensions.RuleID]),
-				"host":    g.Dimensions.ClientRequestHTTPHost,
-				"country": g.Dimensions.ClientCountryName,
-			}).Add(float64(g.Count))
-	}
-}
+//func addFirewallGroups(z *zoneResp, name string, account string) {
+//	// Nothing to do.
+//	if len(z.FirewallEventsAdaptiveGroups) == 0 {
+//		return
+//	}
+//	rulesMap := fetchFirewallRules(z.ZoneTag)
+//	for _, g := range z.FirewallEventsAdaptiveGroups {
+//		zoneFirewallEventsCount.With(
+//			prometheus.Labels{
+//				"zone":    name,
+//				"account": account,
+//				"action":  g.Dimensions.Action,
+//				"source":  g.Dimensions.Source,
+//				"rule":    normalizeRuleName(rulesMap[g.Dimensions.RuleID]),
+//				"host":    g.Dimensions.ClientRequestHTTPHost,
+//				"country": g.Dimensions.ClientCountryName,
+//			}).Add(float64(g.Count))
+//	}
+//}
 
-func normalizeRuleName(initialText string) string {
-	maxLength := 200
-	nonSpaceName := strings.ReplaceAll(strings.ToLower(initialText), " ", "_")
-	if len(nonSpaceName) > maxLength {
-		return nonSpaceName[:maxLength]
-	}
-	return nonSpaceName
-}
+//func normalizeRuleName(initialText string) string {
+//	maxLength := 200
+//	nonSpaceName := strings.ReplaceAll(strings.ToLower(initialText), " ", "_")
+//	if len(nonSpaceName) > maxLength {
+//		return nonSpaceName[:maxLength]
+//	}
+//	return nonSpaceName
+//}
 
 func addHealthCheckGroups(z *zoneResp, name string, account string) {
 	if len(z.HealthCheckEventsAdaptiveGroups) == 0 {
