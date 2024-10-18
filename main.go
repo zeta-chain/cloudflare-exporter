@@ -151,7 +151,6 @@ func runExporter() {
 
 	if len(viper.GetString("cf_api_token")) > 0 {
 		cloudflareAPI, err = cloudflare.NewWithAPIToken(viper.GetString("cf_api_token"))
-
 	} else {
 		cloudflareAPI, err = cloudflare.New(viper.GetString("cf_api_key"), viper.GetString("cf_api_email"))
 	}

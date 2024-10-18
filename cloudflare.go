@@ -289,38 +289,38 @@ func fetchZones() []cloudflare.Zone {
 	return z
 }
 
-func fetchFirewallRules(zoneID string) map[string]string {
-	ctx := context.Background()
-	listOfRules, _, err := cloudflareAPI.FirewallRules(ctx,
-		cloudflare.ZoneIdentifier(zoneID),
-		cloudflare.FirewallRuleListParams{})
-	if err != nil {
-		log.Fatalf("Error fetching firewall rules: %s", err)
-	}
-	firewallRulesMap := make(map[string]string)
-
-	for _, rule := range listOfRules {
-		firewallRulesMap[rule.ID] = rule.Description
-	}
-
-	listOfRulesets, err := cloudflareAPI.ListRulesets(ctx, cloudflare.ZoneIdentifier(zoneID), cloudflare.ListRulesetsParams{})
-	if err != nil {
-		log.Fatalf("Error listing rulesets: %s", err)
-	}
-	for _, rulesetDesc := range listOfRulesets {
-		if rulesetDesc.Phase == "http_request_firewall_managed" {
-			ruleset, err := cloudflareAPI.GetRuleset(ctx, cloudflare.ZoneIdentifier(zoneID), rulesetDesc.ID)
-			if err != nil {
-				log.Fatalf("Error fetching ruleset: %s", err)
-			}
-			for _, rule := range ruleset.Rules {
-				firewallRulesMap[rule.ID] = rule.Description
-			}
-		}
-	}
-
-	return firewallRulesMap
-}
+//func fetchFirewallRules(zoneID string) map[string]string {
+//	ctx := context.Background()
+//	listOfRules, _, err := cloudflareAPI.FirewallRules(ctx,
+//		cloudflare.ZoneIdentifier(zoneID),
+//		cloudflare.FirewallRuleListParams{})
+//	if err != nil {
+//		log.Fatalf("Error fetching firewall rules: %s", err)
+//	}
+//	firewallRulesMap := make(map[string]string)
+//
+//	for _, rule := range listOfRules {
+//		firewallRulesMap[rule.ID] = rule.Description
+//	}
+//
+//	listOfRulesets, err := cloudflareAPI.ListRulesets(ctx, cloudflare.ZoneIdentifier(zoneID), cloudflare.ListRulesetsParams{})
+//	if err != nil {
+//		log.Fatalf("Error listing rulesets: %s", err)
+//	}
+//	for _, rulesetDesc := range listOfRulesets {
+//		if rulesetDesc.Phase == "http_request_firewall_managed" {
+//			ruleset, err := cloudflareAPI.GetRuleset(ctx, cloudflare.ZoneIdentifier(zoneID), rulesetDesc.ID)
+//			if err != nil {
+//				log.Fatalf("Error fetching ruleset: %s", err)
+//			}
+//			for _, rule := range ruleset.Rules {
+//				firewallRulesMap[rule.ID] = rule.Description
+//			}
+//		}
+//	}
+//
+//	return firewallRulesMap
+//}
 
 func fetchAccounts() []cloudflare.Account {
 	ctx := context.Background()
